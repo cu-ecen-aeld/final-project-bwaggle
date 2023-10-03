@@ -17,11 +17,11 @@
 #include <pthread.h>
 #include <sys/queue.h>
 #include <stddef.h>
-#include "../aesd-char-driver/aesd_ioctl.h"
+// #include "../aesd-char-driver/aesd_ioctl.h"
 
 #define PORT "9000"
 #define BUFFER_SIZE 100000
-#define USE_AESD_CHAR_DEVICE 1
+// #define USE_AESD_CHAR_DEVICE 1
 
 #ifdef USE_AESD_CHAR_DEVICE
 #define FILE_NAME "/dev/aesdchar"
@@ -124,6 +124,8 @@ char* extract_data_up_to_newline(char *buf, int nread, int* new_line_found) {
 
 }
 
+#ifdef USE_AESD_CHAR_DEVICE
+
 char* read_char_device(long* fsize, int found_cmd, uint32_t write_cmd, uint32_t write_cmd_offset) {
 
     struct aesd_seekto seekto;
@@ -174,6 +176,8 @@ char* read_char_device(long* fsize, int found_cmd, uint32_t write_cmd, uint32_t 
 
     return file_contents;
 }
+
+#endif
 
 char* read_file(long* fsize) {
 
