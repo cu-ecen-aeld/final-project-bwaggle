@@ -6,3 +6,4 @@ IMAGE_TO_FLASH="buildroot/output/images/sdcard.img"
 MICRO_SD_DEVICE="/dev/sdb"
 
 sudo dd if=$IMAGE_TO_FLASH of=$MICRO_SD_DEVICE conv=fdatasync bs=1M
+udisksctl power-off -b /dev/sdb

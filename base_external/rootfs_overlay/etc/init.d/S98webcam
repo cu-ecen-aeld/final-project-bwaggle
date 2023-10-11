@@ -6,19 +6,9 @@ case "$1" in
     start)
 	echo "Loading webcam driver"
 	modprobe uvcvideo
-
-	# # retrieve major number
-	# major=$(awk "\$2==\"aesdchar\" {print \$1}" /proc/devices)
-	# echo "aesdchar driver major number $major"
-
-	# # Remove stale nodes
-	# rm -f /dev/aesdchar
-	# mknod /dev/aesdchar c $major 0
-	# chgrp staff /dev/aesdchar
-	# chmod 664 /dev/aesdchar
 	;;
     stop)
-	echo "Unloading aesdchar driver"
+	echo "Unloading webcam driver"
 	rmmod uvcvideo
 
 	# Remove stale nodes

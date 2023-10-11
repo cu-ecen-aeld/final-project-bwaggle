@@ -5,7 +5,7 @@ from sklearn.model_selection import train_test_split
 from sklearn.svm import SVC
 from sklearn.metrics import accuracy_score
 
-DATASET_DIR = '/root/'
+DATASET_DIR = '/data/'
 
 # Step 3: Load and preprocess images
 def load_and_preprocess_images(dataset_dir):
@@ -86,7 +86,7 @@ def main():
     print(f"Accuracy: {accuracy * 100:.2f}%")
 
     # Test
-    detect_face("/root/Brad/brad.jpg")
+    detect_face("/data/Brad/brad.jpg")
 
 
 if __name__ == "__main__":
