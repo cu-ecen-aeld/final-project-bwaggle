@@ -116,6 +116,7 @@ def detect_face(test_image_path, model, label_to_name):
 
 # Function for real-time video stream and face detection
 def detect_faces_realtime(model, label_to_name):
+    # cv2.namedWindow("Window", cv2.WINDOW_X11)
     # Create a VideoCapture object to capture video from the webcam (you can adjust the device index)
     camera_index = 0
     if HOST:
@@ -169,8 +170,8 @@ def detect_faces_realtime(model, label_to_name):
             break
 
         # Display the frame with detected faces
-        if HOST:
-            cv2.imshow('Face Detection', frame)
+        # if HOST:
+        cv2.imshow('Face Detection', frame)
 
         # Exit the loop when the 'q' key is pressed
         if cv2.waitKey(1) & 0xFF == ord('q'):
