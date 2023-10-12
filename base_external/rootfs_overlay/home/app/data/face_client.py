@@ -165,13 +165,13 @@ def detect_faces_realtime(model, label_to_name):
             cv2.rectangle(frame, (x, y), (x+w, y+h), (0, 255, 0), 2)
             cv2.putText(frame, person_name, (x, y-10), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 0), 2)
 
-        if(person_name != "Unknown"):
+        if(person_name != "Unknown" and not HOST):
             print("Found live person: ", person_name)
             break
 
         # Display the frame with detected faces
-        # if HOST:
-        cv2.imshow('Face Detection', frame)
+        if HOST:
+            cv2.imshow('Face Detection', frame)
 
         # Exit the loop when the 'q' key is pressed
         if cv2.waitKey(1) & 0xFF == ord('q'):
@@ -183,6 +183,62 @@ def detect_faces_realtime(model, label_to_name):
 
     if not HOST:
         write_image_to_volume(person_name, frame)
+
+import cv2
+import os
+
+# Function to take photos for training
+def take_photos():
+    # Create a directory to save the photos
+    photos_dir = DATASET_DIR
+    os.makedirs(photos_dir, exist_ok=True)
+
+    while True:
+        # Prompt the user for their first name
+        person_name = input("Enter the first name of the person: ")
+
+        # Create a directory for the person's photos
+        person_dir = os.path.join(photos_dir, person_name)
+        os.makedirs(person_dir, exist_ok=True)
+
+        # Create a VideoCapture object to capture video from the webcam (you can adjust the device index)
+        cap = cv2.VideoCapture(0)
+
+        # Initialize a counter for photo filenames
+        photo_counter = 0
+
+        while True:
+            # Read a frame from the webcam
+            ret, frame = cap.read()
+
+            # Display the frame
+            cv2.imshow('Take Photos', frame)
+
+            # Check for user input to capture a photo (spacebar)
+            key = cv2.waitKey(1)
+            if key == 32:  # Spacebar key
+                # Save the photo with a filename that includes the person's name and a counter
+                photo_filename = f"{person_name}_{photo_counter}.jpg"
+                photo_path = os.path.join(person_dir, photo_filename)
+                cv2.imwrite(photo_path, frame)
+                print(f"Photo saved as {photo_filename}")
+
+                # Increment the photo counter
+                photo_counter += 1
+
+            # Check for user input to finish capturing photos (press 'q' to quit)
+            if key == ord('q'):
+                break
+
+        # Release the VideoCapture and close OpenCV window
+        cap.release()
+        cv2.destroyAllWindows()
+
+        # Ask if the user wants to take more photos
+        another_photo = input("Do you want to take more photos? (yes/no): ").lower()
+        if another_photo != 'yes':
+            break
+
 
 def main():
     # Step 6: Load and preprocess images
@@ -211,6 +267,10 @@ def main():
 
     # Detect faces in real-time video stream
     detect_faces_realtime(model, label_to_name)
+
+    if HOST:
+        take_photos()
+
 
 if __name__ == "__main__":
     main()
