@@ -255,7 +255,7 @@ void *handle_connection(void *arg) {
         int new_line_found = 0;
         char* newString = extract_data_up_to_newline(buf, nread, &new_line_found);
 
-        const char *search_string = "AESDCHAR_IOCSEEKTO:";
+        const char *search_string = "CMD:";
         const char *match_string = NULL;
         const char *result = strstr(newString, search_string);
 
@@ -509,13 +509,13 @@ int main() {
     printf("Listening on port 9000\n");
     printf("server: waiting for connections...\n");
 
-    #ifndef USE_AESD_CHAR_DEVICE
-    pthread_t timer_thread;
-    if(pthread_create(&timer_thread, NULL, timer_thread_function, global_file)) {
-        perror("Timer thread create");
-        goto cleanup_timer;
-    }
-    #endif
+    // #ifndef USE_AESD_CHAR_DEVICE
+    // pthread_t timer_thread;
+    // if(pthread_create(&timer_thread, NULL, timer_thread_function, global_file)) {
+    //     perror("Timer thread create");
+    //     goto cleanup_timer;
+    // }
+    // #endif
 
     while(1) {
         // Wait for and accept a client connection
