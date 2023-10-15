@@ -7,12 +7,21 @@ from sklearn.metrics import accuracy_score
 import tkinter as tk
 from tkinter import ttk
 import joblib
+import socket
+import pickle
+import subprocess
 
 
 DATASET_DIR = '/home/bwaggle/final-project/final-project-bwaggle/face_server/'
 PHOTOS_DIR  = '/home/bwaggle/final-project/data/photos/'
 TEST_IMAGE_PATH = "/home/bwaggle/final-project/data/photos/Brad/Brad_1.jpg"
 MODEL_NAME = "face_model.joblib"
+MODEL_PATH = os.path.join(DATASET_DIR, MODEL_NAME)
+REMOTE_PATH = '/home/app/data'
+PORT = 22
+USERNAME = 'root'
+LOCAL_TEST=True
+
 
 
 def load_and_preprocess_images(dataset_dir):
@@ -170,6 +179,20 @@ def detect_faces_realtime():
     cap.release()
     cv2.destroyAllWindows()
 
+def crop_face(image, bounding_box):
+    x, y, w, h = bounding_box  # Get the bounding box coordinates
+
+    # Ensure the coordinates are within the image dimensions
+    x = max(0, x)
+    y = max(0, y)
+    w = min(w, image.shape[1] - x)
+    h = min(h, image.shape[0] - y)
+
+    # Crop the image to the bounding box
+    cropped_face = image[y:y+h, x:x+w]
+
+    return cropped_face
+
 # Function to take photos for training
 def take_photos(person_name):
     # Create a directory to save the photos
@@ -207,8 +230,10 @@ def take_photos(person_name):
         for (x, y, w, h) in faces:
             # Draw a rectangle around the face and label it
             cv2.rectangle(frame, (x, y), (x+w, y+h), (0, 255, 0), 2)
-            cv2.putText(frame, person_name, (x, y-10), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 0), 2)
+            cropped_face = frame[y:y+h, x:x+w]
+            # cv2.putText(frame, person_name, (x, y-10), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 0), 2)
 
+       
         # Display the frame
         cv2.imshow('Take Photos', frame)
 
@@ -218,7 +243,7 @@ def take_photos(person_name):
             # Save the photo with a filename that includes the person's name and a counter
             photo_filename = f"{person_name}_{photo_counter}.jpg"
             photo_path = os.path.join(person_dir, photo_filename)
-            cv2.imwrite(photo_path, frame)
+            cv2.imwrite(photo_path, cropped_face)
             print(f"Photo saved as {photo_filename}")
 
             # Increment the photo counter
@@ -320,6 +345,77 @@ def create_test_model_realtime_tab(tab_control):
 
     return tab_test_model_realtime
 
+def send_command_to_socket(command):
+
+    try:
+        # Define the server's IP address and port
+        if LOCAL_TEST:
+            server_ip="localhost"
+        else:
+            server_ip = "192.168.86.52"
+        
+        server_port = 9000
+
+        # Create a socket and connect to the server
+        client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        client_socket.connect((server_ip, server_port))
+
+        client_socket.send(command.encode())
+
+        # Close the socket connection
+        client_socket.close()
+    except Exception as e:
+        # Handle any errors
+        print(f"Error: {e}")
+
+def scp_file_to_client(status_label, ip_entry, port_entry):
+
+    # Define the paths and connection details
+    local_path = MODEL_PATH
+    remote_path = REMOTE_PATH
+    hostname = ip_entry.get()
+    port = port_entry.get()
+    username = USERNAME
+
+    try:
+        # Copy face recognition model with SCP
+        p = subprocess.Popen(["scp", local_path, f"{username}@{hostname}:{remote_path}"], bufsize=1024)
+        sts = os.waitpid(p.pid, 0)
+        status_text = f"File {local_path} copied to {username}@{hostname}:{remote_path}"
+        status_label.config(text="Status: Raspberry Pi model successfully updated")
+        print(status_text)
+    except Exception as e:
+        print(f"Error: {e}")
+        status_label.config(text=f"Error: {e}")
+
+
+def create_command_tab(tab_control):
+    tab_command = ttk.Frame(tab_control)
+
+    # Status label
+    status_label = ttk.Label(tab_command, text="Status: OK")
+    status_label.grid(row=5, columnspan=4, padx=10, pady=10)
+
+    # Create labels and textboxes for IP address and port
+    ip_label = ttk.Label(tab_command, text="IP Address:")
+    ip_entry = ttk.Entry(tab_command)
+    port_label = ttk.Label(tab_command, text="Port:")
+    port_entry = ttk.Entry(tab_command)
+
+    # Place IP address and port controls on grid
+    ip_label.grid(row=0, column=0, padx=10, pady=10)
+    ip_entry.grid(row=0, column=1, padx=10, pady=10)
+    ip_entry.insert(0, "192.168.")
+    port_label.grid(row=1, column=0, padx=10, pady=10)
+    port_entry.grid(row=1, column=1, padx=10, pady=10)
+    port_entry.insert(0, "9000")
+
+    # Button for copying file to client
+    button1 = ttk.Button(tab_command, text="Update facial recogntion model on Rpi client", command=lambda: scp_file_to_client(status_label, ip_entry, port_entry))
+    button1.grid(row=0, column=3, padx=10, pady=10)
+
+    return tab_command
+
 def main():
 
     # Create the main application window
@@ -338,10 +434,14 @@ def main():
     # Create and configure the "Test Model Realtime" tab
     tab_test_model_realtime = create_test_model_realtime_tab(tab_control)
 
+    # Create and configure the "Send Command" tab
+    tab_command = create_command_tab(tab_control)
+
     # Add tabs to the tab control
     tab_control.add(tab_take_photos, text="Take Photos")
     tab_control.add(tab_train_model, text="Train Model")
     tab_control.add(tab_test_model_realtime, text="Test Model Realtime")
+    tab_control.add(tab_command, text="Update Client Model")
 
     # Place the tab control in the window
     tab_control.pack(expand=1, fill="both")  # Ensure the tab control expands to fill the window
