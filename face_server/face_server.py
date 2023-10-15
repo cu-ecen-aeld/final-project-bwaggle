@@ -14,9 +14,10 @@ import subprocess
 
 DATASET_DIR = '/home/bwaggle/final-project/final-project-bwaggle/face_server/'
 PHOTOS_DIR  = '/home/bwaggle/final-project/data/photos/'
+MODEL_DIR = '/home/bwaggle/final-project/data/'
 TEST_IMAGE_PATH = "/home/bwaggle/final-project/data/photos/Brad/Brad_1.jpg"
 MODEL_NAME = "face_model.joblib"
-MODEL_PATH = os.path.join(DATASET_DIR, MODEL_NAME)
+MODEL_PATH = os.path.join(MODEL_DIR, MODEL_NAME)
 REMOTE_PATH = '/home/app/data'
 PORT = 22
 USERNAME = 'root'
@@ -121,7 +122,7 @@ def detect_faces_realtime():
     # Create a VideoCapture object to capture video from the webcam (you can adjust the device index)
     camera_index = 0
     label_to_name = create_label_mapping(PHOTOS_DIR)
-    model = joblib.load(os.path.join(DATASET_DIR, MODEL_NAME))
+    model = joblib.load(MODEL_PATH)
 
     cap = cv2.VideoCapture(camera_index)
  
@@ -312,8 +313,7 @@ def train_model(status_label):
     detect_face(TEST_IMAGE_PATH, model, label_to_name)
 
     # Save model to file
-    model_file_name = os.path.join(DATASET_DIR, MODEL_NAME)
-    joblib.dump(model, model_file_name)
+    joblib.dump(model, MODEL_PATH)
 
     status_label.config(text=f"Accuracy: {accuracy:.2%}")
 
