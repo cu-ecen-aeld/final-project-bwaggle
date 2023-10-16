@@ -1,7 +1,7 @@
 
 CC ?= $(CROSS_COMPILE)gcc
-OBJFILES ?= socket_client.o
-MAIN ?= socket_client
+OBJFILES ?= socket-client.o
+MAIN ?= socket-client
 CFLAGS ?= -g -Wall -Werror
 LDFLAGS ?= -pthread
 
