@@ -10,6 +10,8 @@ import joblib
 import socket
 import pickle
 import subprocess
+import threading
+from PIL import Image, ImageTk
 
 
 DATASET_DIR = '/home/bwaggle/final-project/final-project-bwaggle/face_server/'
@@ -18,10 +20,28 @@ MODEL_DIR = '/home/bwaggle/final-project/data/'
 TEST_IMAGE_PATH = "/home/bwaggle/final-project/data/photos/Brad/Brad_1.jpg"
 MODEL_NAME = "face_model.joblib"
 MODEL_PATH = os.path.join(MODEL_DIR, MODEL_NAME)
+LABEL_NAME = "label_to_name.joblib"
+LABEL_PATH = os.path.join(MODEL_DIR, LABEL_NAME)
 REMOTE_PATH = '/home/app/data'
 PORT = 22
 USERNAME = 'root'
+IP_ADDRESS = "127.0.0.1"
 LOCAL_TEST=True
+SERVER_HOST = '0.0.0.0'  # Listen on all available network interfaces
+SERVER_PORT = 9000
+
+
+# Define a global variable for storing the current frame received from the socket
+current_frame = None
+
+# Define a flag to control the monitoring thread
+monitoring = True
+
+# Define the socket server parameters
+
+# Global variables for server and image display
+server_socket = None
+is_monitoring = False
 
 
 
@@ -58,6 +78,8 @@ def create_label_mapping(dataset_dir):
 
     for label, person_name in enumerate(os.listdir(dataset_dir)):
         label_to_name[label] = person_name
+
+    joblib.dump(label_to_name, LABEL_PATH)
 
     return label_to_name
 
@@ -118,8 +140,6 @@ def detect_face(test_image_path, model, label_to_name):
 
 # Function for real-time video stream and face detection
 def detect_faces_realtime():
-    # cv2.namedWindow("Window", cv2.WINDOW_X11)
-    # Create a VideoCapture object to capture video from the webcam (you can adjust the device index)
     camera_index = 0
     label_to_name = create_label_mapping(PHOTOS_DIR)
     model = joblib.load(MODEL_PATH)
@@ -376,9 +396,17 @@ def scp_file_to_client(status_label, ip_entry, port_entry):
     hostname = ip_entry.get()
     port = port_entry.get()
     username = USERNAME
+    IP_ADDRESS = ip_entry.get()
 
     try:
         # Copy face recognition model with SCP
+        p = subprocess.Popen(["scp", local_path, f"{username}@{hostname}:{remote_path}"], bufsize=1024)
+        sts = os.waitpid(p.pid, 0)
+        status_text = f"File {local_path} copied to {username}@{hostname}:{remote_path}"
+        status_label.config(text="Status: Raspberry Pi model successfully updated")
+
+        # Copy label_to_name to client with SCP
+        local_path = LABEL_PATH
         p = subprocess.Popen(["scp", local_path, f"{username}@{hostname}:{remote_path}"], bufsize=1024)
         sts = os.waitpid(p.pid, 0)
         status_text = f"File {local_path} copied to {username}@{hostname}:{remote_path}"
@@ -416,6 +444,81 @@ def create_command_tab(tab_control):
 
     return tab_command
 
+
+# Function to handle client connections and image display
+def start_server(image_label):
+    global server_socket, is_monitoring
+    is_monitoring = True
+
+    server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server_socket.bind((SERVER_HOST, SERVER_PORT))
+    server_socket.listen(1)
+
+    while is_monitoring:
+        client_socket, client_address = server_socket.accept()
+        print(f"Accepted connection from {client_address}")
+
+        while is_monitoring:
+            try:
+                # Receive image data from the client
+                data = b""
+                while True:
+                    packet = client_socket.recv(1024)
+                    print(f"Received packet")
+                    if not packet:
+                        break
+                    data += packet
+
+                    if b'EOF' in data:
+                        break
+
+                if not data:
+                    break
+
+                # Convert received data to an image and display it
+                print("decoding and displaying image")
+                data = data.replace(b'EOF', b'')
+                image = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_COLOR)
+                image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+                image = Image.fromarray(image)
+                image = ImageTk.PhotoImage(image=image)
+
+                image_label.config(image=image)
+                image_label.image = image
+                # is_monitoring = False
+
+            except Exception as e:
+                print(f"Error: {e}")
+                break
+
+        client_socket.close()
+
+    server_socket.close()
+
+# Function to stop the server
+def stop_server():
+    global is_monitoring
+    is_monitoring = False
+    if server_socket:
+        server_socket.close()
+
+def create_monitor_tab(tab_control):
+    tab_monitor = ttk.Frame(tab_control)
+
+    # Create a label to display images
+    image_label = ttk.Label(tab_monitor)
+    image_label.pack(padx=10, pady=10)
+
+    # Create "Start" and "Stop" buttons
+    start_button = ttk.Button(tab_monitor, text="Monitor Start",
+                              command=lambda: threading.Thread(target=start_server,
+                              args=(image_label,)).start())
+    stop_button = ttk.Button(tab_monitor, text="Monitor Stop", command=stop_server)
+    start_button.pack(padx=10, pady=10)
+    stop_button.pack(padx=10, pady=10)
+
+    return tab_monitor
+
 def main():
 
     # Create the main application window
@@ -437,11 +540,15 @@ def main():
     # Create and configure the "Send Command" tab
     tab_command = create_command_tab(tab_control)
 
+    # Create monitoring tab
+    tab_monitor = create_monitor_tab(tab_control)
+
     # Add tabs to the tab control
     tab_control.add(tab_take_photos, text="Take Photos")
     tab_control.add(tab_train_model, text="Train Model")
     tab_control.add(tab_test_model_realtime, text="Test Model Realtime")
     tab_control.add(tab_command, text="Update Client Model")
+    tab_control.add(tab_monitor, text="Monitor Client")
 
     # Place the tab control in the window
     tab_control.pack(expand=1, fill="both")  # Ensure the tab control expands to fill the window
