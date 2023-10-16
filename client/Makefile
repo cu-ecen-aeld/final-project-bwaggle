@@ -1,7 +1,7 @@
 
 CC ?= $(CROSS_COMPILE)gcc
-OBJFILES ?= aesdsocket.o
-MAIN ?= aesdsocket
+OBJFILES ?= socket_client.o
+MAIN ?= socket_client
 CFLAGS ?= -g -Wall -Werror
 LDFLAGS ?= -pthread
 
