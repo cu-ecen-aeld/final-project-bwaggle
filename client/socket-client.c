@@ -7,7 +7,8 @@
 #include <arpa/inet.h>
 
 #define FILE_PATH "/home/bwaggle/final-project/data/logs/"
-#define SERVER_IP "127.0.0.1"
+// #define SERVER_IP "127.0.0.1"
+#define SERVER_IP "192.168.86.33"
 #define SERVER_PORT 9000
 
 int create_client_socket() {
