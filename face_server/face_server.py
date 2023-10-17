@@ -43,6 +43,9 @@ monitoring = True
 server_socket = None
 is_monitoring = False
 
+# Global variable for the thread
+monitoring_thread = None
+
 
 
 def load_and_preprocess_images(dataset_dir):
@@ -445,6 +448,54 @@ def create_command_tab(tab_control):
     return tab_command
 
 
+def start_server_2(image_label):
+    global server_socket, is_monitoring
+    is_monitoring = True
+
+    server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server_socket.bind((SERVER_HOST, SERVER_PORT))
+    server_socket.listen(1)
+
+    while is_monitoring:
+        client_socket, client_address = server_socket.accept()
+        print(f"Accepted connection from {client_address}")
+
+        while is_monitoring:
+            try:
+                # Receive image size
+                size_data = b""
+                while len(size_data) < 4:
+                    size_data += client_socket.recv(4 - len(size_data))
+                image_size = int.from_bytes(size_data, byteorder='big')
+
+                # Receive image data
+                data = b""
+                while len(data) < image_size:
+                    packet = client_socket.recv(image_size - len(data))
+                    if not packet:
+                        break
+                    data += packet
+
+                if not data:
+                    break
+
+                # Convert received data to an image and display it
+                image = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_COLOR)
+                image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+                image = Image.fromarray(image)
+                image = ImageTk.PhotoImage(image=image)
+
+                image_label.config(image=image)
+                image_label.image = image
+
+            except Exception as e:
+                print(f"Error: {e}")
+
+        client_socket.close()
+
+    server_socket.close()
+
+
 # Function to handle client connections and image display
 def start_server(image_label):
     global server_socket, is_monitoring
@@ -463,20 +514,21 @@ def start_server(image_label):
                 # Receive image data from the client
                 data = b""
                 while True:
-                    packet = client_socket.recv(1024)
-                    print(f"Received packet")
+                    packet = client_socket.recv(550000)
+                    # print(f"Received packet")
                     if not packet:
                         break
                     data += packet
 
                     if b'EOF' in data:
+                        print("Detected end of file")
                         break
 
                 if not data:
                     break
 
                 # Convert received data to an image and display it
-                print("decoding and displaying image")
+                print(f"decoding and displaying image size {len(data)}")
                 data = data.replace(b'EOF', b'')
                 image = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_COLOR)
                 image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
@@ -485,11 +537,10 @@ def start_server(image_label):
 
                 image_label.config(image=image)
                 image_label.image = image
-                # is_monitoring = False
 
             except Exception as e:
                 print(f"Error: {e}")
-                break
+                # break
 
         client_socket.close()
 
@@ -502,6 +553,22 @@ def stop_server():
     if server_socket:
         server_socket.close()
 
+
+# Function to start the server in a new thread
+def start_monitoring(image_label):
+    global monitoring_thread
+    monitoring_thread = threading.Thread(target=start_server, args=(image_label,))
+    monitoring_thread.start()
+
+# Function to stop the monitoring thread
+def stop_monitoring():
+    global is_monitoring, monitoring_thread
+    is_monitoring = False
+    if monitoring_thread:
+        monitoring_thread.join()
+    if server_socket:
+        server_socket.close()
+
 def create_monitor_tab(tab_control):
     tab_monitor = ttk.Frame(tab_control)
 
@@ -510,10 +577,12 @@ def create_monitor_tab(tab_control):
     image_label.pack(padx=10, pady=10)
 
     # Create "Start" and "Stop" buttons
+    # start_button = ttk.Button(tab_monitor, text="Monitor Start",
+    #                           command=lambda: threading.Thread(target=start_server,
+    #                           args=(image_label,)).start())
     start_button = ttk.Button(tab_monitor, text="Monitor Start",
-                              command=lambda: threading.Thread(target=start_server,
-                              args=(image_label,)).start())
-    stop_button = ttk.Button(tab_monitor, text="Monitor Stop", command=stop_server)
+                                command=lambda: start_monitoring(image_label))
+    stop_button = ttk.Button(tab_monitor, text="Monitor Stop", command=stop_monitoring)
     start_button.pack(padx=10, pady=10)
     stop_button.pack(padx=10, pady=10)
 

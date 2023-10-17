@@ -7,15 +7,17 @@ from sklearn.metrics import accuracy_score
 import joblib
 import time
 import sys
+import time
+import socket
 
 
-HOST = False
+HOST = "192.168.86.33"
+PORT = 9000
 
 MODEL_PATH='/data/face_model.joblib'
 LABEL_PATH='/data/label_to_name.joblib'
 
 DATASET_DIR = '/data/'
-TEST_IMAGE_PATH = "/home/bwaggle/final-project/final-project-bwaggle/base_external/rootfs_overlay/home/app/data/Brad/brad1.jpg"
 
 # Extract HOG features
 def extract_hog_features(images):
@@ -45,6 +47,83 @@ def write_image_to_volume(person_name, image):
     image_path = os.path.join(data_volume_path, image_filename)
     cv2.imwrite(image_path, image)
 
+# Function to establish a socket connection
+def connect_to_socket(host, port, max_retries=10000000, retry_interval=1):
+    retries = 0
+    connected = False
+    client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+
+    print("Waiting for socket to connect.")
+    sys.stdout.flush()
+
+    while not connected and retries < max_retries:
+        try:
+            client_socket.connect((host, port))
+            connected = True
+        except Exception as e:
+            # print(f"Error: {e}")
+            retries += 1
+            time.sleep(retry_interval)
+
+    if not connected:
+        print(f"Failed to establish a connection after {max_retries} retries.")
+        sys.stdout.flush()
+        return None
+
+    print(f"Connected to socket server {host}:{port}")
+    sys.stdout.flush()
+    return client_socket
+
+# Function to disconnect the socket
+def disconnect_socket(client_socket):
+    if client_socket:
+        client_socket.close()
+
+# Function to send an image over a connected socket
+def send_image(client_socket, image):
+    if not client_socket:
+        print("Socket is not connected.")
+        return
+
+    # Check if the socket is still connected
+    try:
+        client_socket.getsockopt(socket.SOL_SOCKET, socket.SO_ERROR)
+    except (socket.error, OSError):
+        print("Socket is no longer connected.")
+        sys.stdout.flush()
+        client_socket = connect_to_socket(HOST, PORT)
+        return client_socket
+
+    try:
+        # Encode the image as JPEG (you can use other formats like PNG)
+        _, img_encoded = cv2.imencode('.jpg', image)
+
+        # Convert the encoded image to bytes
+        image_bytes = img_encoded.tobytes()
+
+        # Append an End-Of-File
+        image_bytes += b'EOF\n'
+
+        # Send the image size (as an unsigned 64-bit integer)
+        image_size = len(image_bytes)
+        print(f"Sending image of length {image_size}")
+        # client_socket.sendall(image_size.to_bytes(8, byteorder='big'))
+
+        # Send the image data
+        try:
+            client_socket.sendall(image_bytes)
+        except Exception as e:
+            print("Socket is no longer connected.")
+            sys.stdout.flush()
+            disconnect_socket(client_socket)
+            client_socket = connect_to_socket(HOST, PORT)
+            return client_socket
+        finally:
+            return client_socket
+    except Exception as e:
+        print(f"Error: {e}")
+
+
 # Real-time video stream and face detection
 def detect_faces_realtime(model, label_to_name):
 
@@ -55,6 +134,9 @@ def detect_faces_realtime(model, label_to_name):
         gst_str = 'v4l2src device=/dev/video0 ! videoconvert ! appsink'
         cap = cv2.VideoCapture(gst_str, cv2.CAP_GSTREAMER)
     print("Capturing video on camera index: ", camera_index)
+
+    # Connect to the socket
+    client_socket = connect_to_socket(HOST, PORT)
 
     label_ctr_dict = {}
 
@@ -69,7 +151,7 @@ def detect_faces_realtime(model, label_to_name):
         gray_frame = frame
 
         # Resize the frame for processing
-        frame = cv2.resize(frame, (640, 480))
+        # frame = cv2.resize(frame, (640, 480))
 
         # Perform face detection using OpenCV's pre-trained haarcascades classifier
         face_cascade = cv2.CascadeClassifier(DATASET_DIR + "haarcascade_frontalface_default.xml")
@@ -83,27 +165,34 @@ def detect_faces_realtime(model, label_to_name):
             hog_feature = hog_feature.reshape(1, -1)
             predicted_label = model.predict(hog_feature)[0]
             person_name = label_to_name.get(predicted_label, "Unknown")
+            print(f"Detected person {person_name}")
             
 
             # Draw a rectangle around the face and label it
             cv2.rectangle(frame, (x, y), (x+w, y+h), (0, 255, 0), 2)
             cv2.putText(frame, person_name, (x, y-10), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 0), 2)
 
-        # Write image file if same person detected more than 3 times
-        if(person_name != "Unknown"):
-            if person_name not in label_ctr_dict:
-                label_ctr_dict[person_name] = 0
-            label_ctr_dict[person_name] += 1
-            print(f"Detected {person_name}:{label_ctr_dict[person_name]}")
-            if label_ctr_dict[person_name] > 3:
-                label_ctr_dict[person_name] = 0
-                write_image_to_volume(person_name, frame)
-                print("Logging photo for: ", person_name)
-                sys.stdout.flush()
+
+        if client_socket:
+            # Call the function to send the image
+            client_socket = send_image(client_socket, frame)
+        else:
+            # Write image file if same person detected more than 3 times
+            if(person_name != "Unknown"):
+                if person_name not in label_ctr_dict:
+                    label_ctr_dict[person_name] = 0
+                label_ctr_dict[person_name] += 1
+                print(f"Detected {person_name}:{label_ctr_dict[person_name]}")
+                if label_ctr_dict[person_name] > 3:
+                    label_ctr_dict[person_name] = 0
+                    write_image_to_volume(person_name, frame)
+                    print("Logging photo for: ", person_name)
+                    sys.stdout.flush()
 
     # Release the VideoCapture and close all OpenCV windows
     cap.release()
     cv2.destroyAllWindows()
+    disconnect_socket(client_socket)
 
 def main():
 
