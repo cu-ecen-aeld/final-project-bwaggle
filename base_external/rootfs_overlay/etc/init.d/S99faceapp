@@ -1,0 +1,19 @@
+#!/bin/sh
+
+# Start/stop script for webcam driver
+
+case "$1" in
+    start)
+	echo "Loading facial recognition app"
+	docker run --device=/dev/video0:/dev/video0 -v /home/app/data:/data bwaggle/app &
+	;;
+    stop)
+	echo "Unloading the facial recognition app"
+	docker stop $(docker ps -q)
+	;;
+    *)
+	echo "Usage: $0 {start|stop}"
+	exit 1
+esac
+
+exit 0
