@@ -12,16 +12,23 @@ import pickle
 import subprocess
 import threading
 from PIL import Image, ImageTk
+import functools
 
 
 DATASET_DIR = '/home/bwaggle/final-project/final-project-bwaggle/face_server/'
 PHOTOS_DIR  = '/home/bwaggle/final-project/data/photos/'
 MODEL_DIR = '/home/bwaggle/final-project/data/'
-TEST_IMAGE_PATH = "/home/bwaggle/final-project/data/photos/Brad/Brad_1.jpg"
+
+TEST_IMAGE = 'Brad_1.jpg'
+TEST_IMAGE_DIR = "/home/bwaggle/final-project/data/photos/Brad/"
+TEST_IMAGE_PATH = os.path.join(TEST_IMAGE_DIR, TEST_IMAGE)
+
 MODEL_NAME = "face_model.joblib"
 MODEL_PATH = os.path.join(MODEL_DIR, MODEL_NAME)
+
 LABEL_NAME = "label_to_name.joblib"
 LABEL_PATH = os.path.join(MODEL_DIR, LABEL_NAME)
+
 REMOTE_PATH = '/home/app/data'
 PORT = 22
 USERNAME = 'root'
@@ -29,6 +36,7 @@ IP_ADDRESS = "127.0.0.1"
 LOCAL_TEST=True
 SERVER_HOST = '0.0.0.0'  # Listen on all available network interfaces
 SERVER_PORT = 9000
+PASS_FILE = '/home/bwaggle/final-project/data/pwd.txt'
 
 
 # Define a global variable for storing the current frame received from the socket
@@ -41,12 +49,10 @@ monitoring = True
 
 # Global variables for server and image display
 server_socket = None
-is_monitoring = False
+# is_monitoring = False
 
 # Global variable for the thread
 monitoring_thread = None
-
-
 
 def load_and_preprocess_images(dataset_dir):
     images = []
@@ -139,6 +145,7 @@ def detect_face(test_image_path, model, label_to_name):
     test_image = cv2.imread(test_image_path)
     recognized_person = recognize_face(test_image, model, label_to_name)
     print(f"Recognized person: {recognized_person}")
+    return recognized_person
 
 
 # Function for real-time video stream and face detection
@@ -218,7 +225,7 @@ def crop_face(image, bounding_box):
     return cropped_face
 
 # Function to take photos for training
-def take_photos(person_name):
+def take_photos(person_name, status_label):
     # Create a directory to save the photos
     photos_dir = PHOTOS_DIR
     os.makedirs(photos_dir, exist_ok=True)
@@ -272,6 +279,7 @@ def take_photos(person_name):
 
             # Increment the photo counter
             photo_counter += 1
+            status_label.config(text=f"{photo_counter} photos of {person_name} were saved")
 
         # Check for user input to finish capturing photos (press 'q' to quit)
         if key == ord('q'):
@@ -290,22 +298,19 @@ def create_take_photos_tab(tab_control):
     name_label = ttk.Label(tab_take_photos, text="Enter First Name:")
     name_entry = ttk.Entry(tab_take_photos)
 
+    # Create a label to provide instructions
+    status_label = ttk.Label(tab_take_photos, text="")
+
     # Create a button to start taking photos
     start_button = ttk.Button(tab_take_photos, text="Start Taking Photos",
-                              command=lambda: take_photos(name_entry.get()))
-
-    # Create a button to finish taking photos
-    finish_button = ttk.Button(tab_take_photos, text="Finish Taking Photos")
-
-    # Create a label to provide instructions
-    instructions_label = ttk.Label(tab_take_photos, text="Press Spacebar to take a photo. Press 'Q' to finish.")
+                              command=lambda: take_photos(name_entry.get(), status_label))
 
     # Layout widgets using grid
     name_label.grid(row=0, column=0, padx=10, pady=10)
     name_entry.grid(row=0, column=1, padx=10, pady=10)
     start_button.grid(row=1, column=0, columnspan=2, padx=10, pady=10)
-    finish_button.grid(row=2, column=0, columnspan=2, padx=10, pady=10)
-    instructions_label.grid(row=3, column=0, columnspan=2, padx=10, pady=10)
+    # finish_button.grid(row=2, column=0, columnspan=2, padx=10, pady=10)
+    status_label.grid(row=3, column=0, columnspan=2, padx=10, pady=10)
 
     return tab_take_photos
 
@@ -333,12 +338,13 @@ def train_model(status_label):
     print(f"Accuracy: {accuracy * 100:.2f}%")
 
     # Test
-    detect_face(TEST_IMAGE_PATH, model, label_to_name)
+    recognized_person = detect_face(TEST_IMAGE_PATH, model, label_to_name)
 
     # Save model to file
     joblib.dump(model, MODEL_PATH)
 
-    status_label.config(text=f"Accuracy: {accuracy:.2%}")
+    # Update status label
+    status_label.config(text=f"Model Accuracy: {accuracy:.2%}\nTesting on {TEST_IMAGE}\nDetected {recognized_person}")
 
 
 def create_train_model_tab(tab_control):
@@ -403,14 +409,14 @@ def scp_file_to_client(status_label, ip_entry, port_entry):
 
     try:
         # Copy face recognition model with SCP
-        p = subprocess.Popen(["scp", local_path, f"{username}@{hostname}:{remote_path}"], bufsize=1024)
+        p = subprocess.Popen(["sshpass", "-f", PASS_FILE, "scp", local_path, f"{username}@{hostname}:{remote_path}"], bufsize=1024)
         sts = os.waitpid(p.pid, 0)
         status_text = f"File {local_path} copied to {username}@{hostname}:{remote_path}"
         status_label.config(text="Status: Raspberry Pi model successfully updated")
 
         # Copy label_to_name to client with SCP
         local_path = LABEL_PATH
-        p = subprocess.Popen(["scp", local_path, f"{username}@{hostname}:{remote_path}"], bufsize=1024)
+        p = subprocess.Popen(["sshpass", "-f", PASS_FILE, "scp", local_path, f"{username}@{hostname}:{remote_path}"], bufsize=1024)
         sts = os.waitpid(p.pid, 0)
         status_text = f"File {local_path} copied to {username}@{hostname}:{remote_path}"
         status_label.config(text="Status: Raspberry Pi model successfully updated")
@@ -436,7 +442,7 @@ def create_command_tab(tab_control):
     # Place IP address and port controls on grid
     ip_label.grid(row=0, column=0, padx=10, pady=10)
     ip_entry.grid(row=0, column=1, padx=10, pady=10)
-    ip_entry.insert(0, "192.168.")
+    ip_entry.insert(0, "192.168.86.39")
     port_label.grid(row=1, column=0, padx=10, pady=10)
     port_entry.grid(row=1, column=1, padx=10, pady=10)
     port_entry.insert(0, "9000")
@@ -448,68 +454,21 @@ def create_command_tab(tab_control):
     return tab_command
 
 
-def start_server_2(image_label):
-    global server_socket, is_monitoring
-    is_monitoring = True
-
-    server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    server_socket.bind((SERVER_HOST, SERVER_PORT))
-    server_socket.listen(1)
-
-    while is_monitoring:
-        client_socket, client_address = server_socket.accept()
-        print(f"Accepted connection from {client_address}")
-
-        while is_monitoring:
-            try:
-                # Receive image size
-                size_data = b""
-                while len(size_data) < 4:
-                    size_data += client_socket.recv(4 - len(size_data))
-                image_size = int.from_bytes(size_data, byteorder='big')
-
-                # Receive image data
-                data = b""
-                while len(data) < image_size:
-                    packet = client_socket.recv(image_size - len(data))
-                    if not packet:
-                        break
-                    data += packet
-
-                if not data:
-                    break
-
-                # Convert received data to an image and display it
-                image = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_COLOR)
-                image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-                image = Image.fromarray(image)
-                image = ImageTk.PhotoImage(image=image)
-
-                image_label.config(image=image)
-                image_label.image = image
-
-            except Exception as e:
-                print(f"Error: {e}")
-
-        client_socket.close()
-
-    server_socket.close()
-
-
 # Function to handle client connections and image display
-def start_server(image_label):
-    global server_socket, is_monitoring
-    is_monitoring = True
+def start_server(image_label, stop_event):
+    global server_socket
 
-    server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    server_socket.bind((SERVER_HOST, SERVER_PORT))
-    server_socket.listen(1)
+    if (server_socket == None):
+        server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        server_socket.bind((SERVER_HOST, SERVER_PORT))
+        server_socket.listen(1)
+    
 
-    while is_monitoring:
+    while not stop_event.is_set():
         client_socket, client_address = server_socket.accept()
         print(f"Accepted connection from {client_address}")
 
-        while is_monitoring:
+        while not stop_event.is_set():
             try:
                 # Receive image data from the client
                 data = b""
@@ -521,7 +480,7 @@ def start_server(image_label):
                     data += packet
 
                     if b'EOF' in data:
-                        print("Detected end of file")
+                        # print("Detected end of file")
                         break
 
                 if not data:
@@ -531,62 +490,75 @@ def start_server(image_label):
                 print(f"decoding and displaying image size {len(data)}")
                 data = data.replace(b'EOF', b'')
                 image = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_COLOR)
-                image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-                image = Image.fromarray(image)
-                image = ImageTk.PhotoImage(image=image)
 
-                image_label.config(image=image)
-                image_label.image = image
+                # Resize image
+                resized_image = cv2.resize(image, (900,600))
 
+                resized_image_rgb = cv2.cvtColor(resized_image, cv2.COLOR_BGR2RGB)
+                # image = Image.fromarray(image)
+                resized_image_photo = ImageTk.PhotoImage(image=Image.fromarray(resized_image_rgb))
+
+
+                # image = ImageTk.PhotoImage(image=image)
+                # Display image
+                image_label.config(image=resized_image_photo)
+                image_label.image = resized_image_photo          
+                
             except Exception as e:
                 print(f"Error: {e}")
-                # break
+                break
 
         client_socket.close()
 
-    server_socket.close()
-
-# Function to stop the server
-def stop_server():
-    global is_monitoring
-    is_monitoring = False
-    if server_socket:
+    print("Stop monitoring")
+    
+    if (server_socket):
         server_socket.close()
+    
 
 
 # Function to start the server in a new thread
-def start_monitoring(image_label):
-    global monitoring_thread
-    monitoring_thread = threading.Thread(target=start_server, args=(image_label,))
+def start_monitoring(image_label, stop_event):
+    global monitoring_thread, server_socket
+    if (server_socket):
+        server_socket.close
+    stop_event.clear()
+    monitoring_thread = threading.Thread(target=start_server, args=(image_label, stop_event))
     monitoring_thread.start()
 
 # Function to stop the monitoring thread
-def stop_monitoring():
-    global is_monitoring, monitoring_thread
-    is_monitoring = False
+def stop_monitoring(stop_event):
+    global monitoring_thread, server_socket
+    server_socket = None
+    print(f"Time to stop monitoring {monitoring_thread}")
     if monitoring_thread:
-        monitoring_thread.join()
-    if server_socket:
-        server_socket.close()
+        print(f"Stopping monitoring_thread {monitoring_thread}")
+        if (server_socket):
+            server_socket.close
+        stop_event.set()
 
-def create_monitor_tab(tab_control):
+
+def create_monitor_tab(tab_control, stop_event):
     tab_monitor = ttk.Frame(tab_control)
 
     # Create a label to display images
     image_label = ttk.Label(tab_monitor)
-    image_label.pack(padx=10, pady=10)
 
-    # Create "Start" and "Stop" buttons
-    # start_button = ttk.Button(tab_monitor, text="Monitor Start",
-    #                           command=lambda: threading.Thread(target=start_server,
-    #                           args=(image_label,)).start())
     start_button = ttk.Button(tab_monitor, text="Monitor Start",
-                                command=lambda: start_monitoring(image_label))
-    stop_button = ttk.Button(tab_monitor, text="Monitor Stop", command=stop_monitoring)
+                                command=lambda: start_monitoring(image_label, stop_event))
+    stop_button = ttk.Button(tab_monitor, text="Monitor Stop",
+                                command=lambda: stop_monitoring(stop_event))
     start_button.pack(padx=10, pady=10)
     stop_button.pack(padx=10, pady=10)
+    image_label.pack(padx=10, pady=10)
 
     return tab_monitor
+
+def on_closing(app, stop_event):
+    if monitoring_thread:
+        stop_event.set()
+    app.destroy()
+    
 
 def main():
 
@@ -609,8 +581,10 @@ def main():
     # Create and configure the "Send Command" tab
     tab_command = create_command_tab(tab_control)
 
-    # Create monitoring tab
-    tab_monitor = create_monitor_tab(tab_control)
+    # Create monitoring tab in a seperate thread
+    stop_event = threading.Event()
+    app.protocol("WM_DELETE_WINDOW", lambda: on_closing(app, stop_event))
+    tab_monitor = create_monitor_tab(tab_control, stop_event)
 
     # Add tabs to the tab control
     tab_control.add(tab_take_photos, text="Take Photos")
